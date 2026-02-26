@@ -1,0 +1,8 @@
+venv
+aisdk-2025-10-29.csv
+fuel_model.joblib
+great_circle_route.csv
+model_evaluation.png
+ne_land.geojson
+optimised_route.csv
+ship_training_data.csv
