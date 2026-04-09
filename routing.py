@@ -31,7 +31,7 @@ ARCHIVE_API = "https://archive-api.open-meteo.com/v1/archive"
 MARINE_API  = "https://marine-api.open-meteo.com/v1/marine"
 
 # Natural Earth low-res land polygons (tiny download, ~500KB, no auth needed)
-LAND_GEOJSON_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_land.geojson"
+LAND_GEOJSON_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson"
 LAND_CACHE_FILE  = "ne_land.geojson"
 
 
@@ -232,7 +232,7 @@ def astar_route(start_latlon, end_latlon, model, features,
     s_lat, s_lon = start_latlon
     e_lat, e_lon = end_latlon
 
-    pad = grid_res * 4
+    pad = max(grid_res * 8, 30)
     lat_min = min(s_lat, e_lat) - pad
     lat_max = max(s_lat, e_lat) + pad
     lon_min = min(s_lon, e_lon) - pad
@@ -252,9 +252,11 @@ def astar_route(start_latlon, end_latlon, model, features,
     def nearest_ocean(r, c):
         if ocean_mask[r, c]:
             return r, c
-        for radius in range(1, 10):
+        for radius in range(1, 30):
             for dr in range(-radius, radius+1):
                 for dc in range(-radius, radius+1):
+                    if abs(dr) != radius and abs(dc) != radius:
+                        continue
                     nr, nc = r+dr, c+dc
                     if grid.valid(nr, nc) and ocean_mask[nr, nc]:
                         return nr, nc
@@ -264,6 +266,20 @@ def astar_route(start_latlon, end_latlon, model, features,
     er, ec = nearest_ocean(er, ec)
 
     print(f"Start: {grid.latlon(sr,sc)} | End: {grid.latlon(er,ec)}")
+    print(f"Grid bounds: lat [{grid.lat_min:.1f}, {grid.lat_min + (grid.n_rows-1)*grid.res:.1f}] lon [{grid.lon_min:.1f}, {grid.lon_min + (grid.n_cols-1)*grid.res:.1f}]")
+    print(f"Start cell ocean: {ocean_mask[sr,sc]} | End cell ocean: {ocean_mask[er,ec]}")
+    # Print ocean cells in a 5x5 window around start and end
+    for label, rr, rc in [("START", sr, sc), ("END", er, ec)]:
+        print(f"  {label} neighborhood ocean map (o=ocean, X=land):")
+        for dr in range(-2, 3):
+            row_str = ""
+            for dc in range(-2, 3):
+                nr, nc = rr+dr, rc+dc
+                if grid.valid(nr, nc):
+                    row_str += "o" if ocean_mask[nr, nc] else "X"
+                else:
+                    row_str += "."
+            print(f"    {row_str}")
 
     weather_cache = {}
 
@@ -291,7 +307,7 @@ def astar_route(start_latlon, end_latlon, model, features,
     heap = [(heuristic(sr,sc), 0.0, sr, sc, [(sr,sc)], departure_time)]
     best_g = {}
     iters = 0
-    MAX_ITERS = 100_000
+    MAX_ITERS = 500_000
 
     print(f"Searching (max {MAX_ITERS:,} iters, ocean cells only)...")
 
