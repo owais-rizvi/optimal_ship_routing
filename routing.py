@@ -405,13 +405,13 @@ if __name__ == "__main__":
     print("\nLoading land mask...")
     land = load_land_mask()
 
-    ROTTERDAM = (51.9,  4.5)
-    NEW_YORK  = (40.7, -74.0)
-    DEPARTURE = datetime(2024, 6, 15, 0, 0)
+    MUMBAI = (18.5,  72.4)
+    KUWAIT  = (29.3, 47.9)
+    DEPARTURE = datetime(2026, 2, 25, 0, 0)
 
     # ── Baseline ──
     print("\n--- BASELINE: Great Circle ---")
-    gc = great_circle_fuel(ROTTERDAM, NEW_YORK, model, features, DEPARTURE)
+    gc = great_circle_fuel(MUMBAI, KUWAIT, model, features, DEPARTURE)
     print(f"  Distance: {gc['total_distance_nm']} nm | Fuel: {gc['total_fuel_tonnes']} t")
     save_route_csv(gc, "great_circle_route.csv")
 
@@ -419,8 +419,8 @@ if __name__ == "__main__":
     # use_weather=False: instant test with neutral conditions
     # use_weather=True:  real weather from Open-Meteo (takes a few minutes)
     result = astar_route(
-        start_latlon   = ROTTERDAM,
-        end_latlon     = NEW_YORK,
+        start_latlon   = MUMBAI,
+        end_latlon     = KUWAIT,
         model          = model,
         features       = features,
         departure_time = DEPARTURE,
@@ -435,4 +435,3 @@ if __name__ == "__main__":
         pct    = saving / gc["total_fuel_tonnes"] * 100
         print(f"\n  Fuel saving vs great circle: {saving:.2f} t ({pct:.1f}%)")
         save_route_csv(result, "optimised_route.csv")
-        print("Tip: set use_weather=True to route around real weather conditions")

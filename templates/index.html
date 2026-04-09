@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ship Route Optimiser</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1923; color: #e0e6ed; height: 100vh; display: flex; flex-direction: column; }
+
+  header { padding: 12px 20px; background: #162030; border-bottom: 1px solid #1e3a5f; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 1.1rem; font-weight: 600; color: #4fc3f7; }
+  header span { font-size: 0.8rem; color: #607d8b; }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 320px; min-width: 320px; background: #162030; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid #1e3a5f; }
+
+  .section-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #4fc3f7; margin-bottom: 6px; }
+
+  .coord-group { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .coord-group label { font-size: 0.72rem; color: #90a4ae; display: block; margin-bottom: 2px; }
+  input[type=number], input[type=datetime-local], select {
+    width: 100%; padding: 6px 8px; background: #0f1923; border: 1px solid #1e3a5f;
+    border-radius: 4px; color: #e0e6ed; font-size: 0.82rem;
+  }
+  input:focus, select:focus { outline: none; border-color: #4fc3f7; }
+
+  .hint { font-size: 0.7rem; color: #546e7a; margin-top: 4px; }
+
+  .port-presets { display: flex; flex-wrap: wrap; gap: 5px; }
+  .preset-btn { font-size: 0.7rem; padding: 3px 8px; border-radius: 3px; border: 1px solid #1e3a5f; background: #0f1923; color: #90a4ae; cursor: pointer; }
+  .preset-btn:hover { border-color: #4fc3f7; color: #4fc3f7; }
+
+  .run-btn { width: 100%; padding: 10px; background: #0277bd; border: none; border-radius: 5px; color: #fff; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background .2s; }
+  .run-btn:hover { background: #0288d1; }
+  .run-btn:disabled { background: #1e3a5f; color: #546e7a; cursor: not-allowed; }
+
+  /* Stats */
+  .stats { display: none; flex-direction: column; gap: 8px; }
+  .stats.visible { display: flex; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 0.8rem; }
+  .stat-label { color: #90a4ae; }
+  .stat-val { font-weight: 600; }
+  .saving { color: #66bb6a; font-size: 0.85rem; font-weight: 700; text-align: center; padding: 8px; background: #1b2e1b; border-radius: 4px; border: 1px solid #2e7d32; }
+
+  .legend { display: flex; flex-direction: column; gap: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }
+  .legend-line { width: 28px; height: 3px; border-radius: 2px; }
+
+  /* Status */
+  #status { font-size: 0.78rem; color: #ffa726; min-height: 18px; }
+  #error  { font-size: 0.78rem; color: #ef5350; min-height: 18px; }
+
+  /* Map */
+  #map { flex: 1; }
+
+  /* Marker labels */
+  .port-label { background: transparent; border: none; font-size: 0.72rem; font-weight: 700; color: #fff; text-shadow: 0 0 4px #000; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚓ Ship Route Optimiser</h1>
+  <span>A* fuel-minimising routing · XGBoost fuel model</span>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+
+    <!-- Origin -->
+    <div>
+      <div class="section-title">Origin</div>
+      <div class="port-presets" id="origin-presets"></div>
+      <div class="coord-group" style="margin-top:8px">
+        <div><label>Latitude</label><input type="number" id="s_lat" step="0.1" value="18.5"></div>
+        <div><label>Longitude</label><input type="number" id="s_lon" step="0.1" value="72.4"></div>
+      </div>
+      <div class="hint">Or click the map (then press Set Origin)</div>
+    </div>
+
+    <!-- Destination -->
+    <div>
+      <div class="section-title">Destination</div>
+      <div class="port-presets" id="dest-presets"></div>
+      <div class="coord-group" style="margin-top:8px">
+        <div><label>Latitude</label><input type="number" id="e_lat" step="0.1" value="29.3"></div>
+        <div><label>Longitude</label><input type="number" id="e_lon" step="0.1" value="47.9"></div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div>
+      <div class="section-title">Settings</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div>
+          <label style="font-size:.72rem;color:#90a4ae;display:block;margin-bottom:2px">Speed (knots)</label>
+          <input type="number" id="speed" value="12" min="5" max="25" step="0.5">
+        </div>
+        <div>
+          <label style="font-size:.72rem;color:#90a4ae;display:block;margin-bottom:2px">Grid res (°)</label>
+          <select id="grid_res">
+            <option value="3">3° — fast</option>
+            <option value="2" selected>2° — balanced</option>
+            <option value="1">1° — detailed</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <label style="font-size:.72rem;color:#90a4ae;display:block;margin-bottom:2px">Departure</label>
+        <input type="datetime-local" id="departure" value="2026-01-01T00:00">
+      </div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="use_weather" style="width:auto">
+        <label for="use_weather" style="font-size:.78rem;color:#90a4ae">Live weather (slower)</label>
+      </div>
+    </div>
+
+    <div id="status"></div>
+    <div id="error"></div>
+
+    <button class="run-btn" id="run-btn" onclick="runRoute()">Calculate Route</button>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="section-title">Legend</div>
+      <div class="legend-item"><div class="legend-line" style="background:#4fc3f7"></div> Optimised (A*)</div>
+      <div class="legend-item"><div class="legend-line" style="background:#ff7043;border-top:2px dashed #ff7043;height:0"></div> Great Circle</div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats" id="stats">
+      <div class="section-title">Results</div>
+      <div style="font-size:.72rem;color:#90a4ae;margin-bottom:2px">Optimised Route</div>
+      <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-val" id="opt-dist">—</span></div>
+      <div class="stat-row"><span class="stat-label">Fuel</span><span class="stat-val" id="opt-fuel">—</span></div>
+      <div class="stat-row"><span class="stat-label">ETA</span><span class="stat-val" id="opt-eta">—</span></div>
+      <div style="font-size:.72rem;color:#90a4ae;margin-top:6px;margin-bottom:2px">Great Circle</div>
+      <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-val" id="gc-dist">—</span></div>
+      <div class="stat-row"><span class="stat-label">Fuel</span><span class="stat-val" id="gc-fuel">—</span></div>
+      <div class="saving" id="saving">—</div>
+    </div>
+
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Map setup ──
+const map = L.map('map', { center: [20, 40], zoom: 3 });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CARTO', maxZoom: 18
+}).addTo(map);
+
+// ── Port presets ──
+const PORTS = [
+  { name: 'Mumbai',    lat: 18.5,  lon: 72.4  },
+  { name: 'Kuwait',    lat: 29.3,  lon: 47.9  },
+  { name: 'Rotterdam', lat: 51.9,  lon: 4.5   },
+  { name: 'New York',  lat: 40.7,  lon: -74.0 },
+  { name: 'Singapore', lat: 1.3,   lon: 103.8 },
+  { name: 'Shanghai',  lat: 31.2,  lon: 121.5 },
+  { name: 'Dubai',     lat: 25.0,  lon: 55.1  },
+  { name: 'Hamburg',   lat: 53.5,  lon: 10.0  },
+];
+
+function makePresets(containerId, latId, lonId) {
+  const c = document.getElementById(containerId);
+  PORTS.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'preset-btn';
+    b.textContent = p.name;
+    b.onclick = () => {
+      document.getElementById(latId).value = p.lat;
+      document.getElementById(lonId).value = p.lon;
+      updateMarkers();
+    };
+    c.appendChild(b);
+  });
+}
+makePresets('origin-presets', 's_lat', 's_lon');
+makePresets('dest-presets',   'e_lat', 'e_lon');
+
+// ── Markers ──
+let originMarker = null, destMarker = null;
+let clickMode = null; // 'origin' | 'dest'
+
+const originIcon = L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:#4fc3f7;border-radius:50%;border:2px solid #fff"></div>' });
+const destIcon   = L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:#ff7043;border-radius:50%;border:2px solid #fff"></div>' });
+
+function updateMarkers() {
+  const sLat = parseFloat(document.getElementById('s_lat').value);
+  const sLon = parseFloat(document.getElementById('s_lon').value);
+  const eLat = parseFloat(document.getElementById('e_lat').value);
+  const eLon = parseFloat(document.getElementById('e_lon').value);
+
+  if (!isNaN(sLat) && !isNaN(sLon)) {
+    if (originMarker) originMarker.setLatLng([sLat, sLon]);
+    else originMarker = L.marker([sLat, sLon], { icon: originIcon, draggable: true })
+      .addTo(map).bindTooltip('Origin', { permanent: true, direction: 'top', className: 'port-label' });
+    originMarker.on('dragend', e => {
+      const ll = e.target.getLatLng();
+      document.getElementById('s_lat').value = ll.lat.toFixed(2);
+      document.getElementById('s_lon').value = ll.lng.toFixed(2);
+    });
+  }
+  if (!isNaN(eLat) && !isNaN(eLon)) {
+    if (destMarker) destMarker.setLatLng([eLat, eLon]);
+    else destMarker = L.marker([eLat, eLon], { icon: destIcon, draggable: true })
+      .addTo(map).bindTooltip('Destination', { permanent: true, direction: 'top', className: 'port-label' });
+    destMarker.on('dragend', e => {
+      const ll = e.target.getLatLng();
+      document.getElementById('e_lat').value = ll.lat.toFixed(2);
+      document.getElementById('e_lon').value = ll.lng.toFixed(2);
+    });
+  }
+}
+updateMarkers();
+
+// Click-to-set: double-click sets origin, ctrl+click sets destination
+map.on('click', e => {
+  if (e.originalEvent.ctrlKey) {
+    document.getElementById('e_lat').value = e.latlng.lat.toFixed(2);
+    document.getElementById('e_lon').value = e.latlng.lng.toFixed(2);
+  } else if (e.originalEvent.shiftKey) {
+    document.getElementById('s_lat').value = e.latlng.lat.toFixed(2);
+    document.getElementById('s_lon').value = e.latlng.lng.toFixed(2);
+  }
+  updateMarkers();
+});
+
+// ── Route layers ──
+let optLayer = null, gcLayer = null;
+
+function clearRoutes() {
+  if (optLayer) { map.removeLayer(optLayer); optLayer = null; }
+  if (gcLayer)  { map.removeLayer(gcLayer);  gcLayer  = null; }
+}
+
+// ── Run ──
+async function runRoute() {
+  clearRoutes();
+  document.getElementById('stats').classList.remove('visible');
+  document.getElementById('error').textContent = '';
+  document.getElementById('status').textContent = 'Running A* search… this may take 1–2 minutes.';
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+
+  const body = {
+    start_lat:   document.getElementById('s_lat').value,
+    start_lon:   document.getElementById('s_lon').value,
+    end_lat:     document.getElementById('e_lat').value,
+    end_lon:     document.getElementById('e_lon').value,
+    speed:       document.getElementById('speed').value,
+    grid_res:    document.getElementById('grid_res').value,
+    departure:   document.getElementById('departure').value,
+    use_weather: document.getElementById('use_weather').checked,
+  };
+
+  try {
+    const res = await fetch('/api/route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) { throw new Error(data.error || 'Server error'); }
+
+    // Draw great circle (dashed orange)
+    gcLayer = L.polyline(data.great_circle.route, { color: '#ff7043', weight: 2, dashArray: '6 5', opacity: 0.8 }).addTo(map);
+
+    // Draw optimised (solid blue)
+    optLayer = L.polyline(data.optimised.route, { color: '#4fc3f7', weight: 3, opacity: 0.95 }).addTo(map);
+
+    // Fit map
+    map.fitBounds(optLayer.getBounds().extend(gcLayer.getBounds()), { padding: [40, 40] });
+
+    // Stats
+    document.getElementById('opt-dist').textContent = data.optimised.total_distance_nm + ' nm';
+    document.getElementById('opt-fuel').textContent = data.optimised.total_fuel_tonnes + ' t';
+    document.getElementById('opt-eta').textContent  = data.optimised.eta.replace('T', ' ').slice(0, 16) + ' UTC';
+    document.getElementById('gc-dist').textContent  = data.great_circle.total_distance_nm + ' nm';
+    document.getElementById('gc-fuel').textContent  = data.great_circle.total_fuel_tonnes + ' t';
+    document.getElementById('saving').textContent   =
+      `⛽ Fuel saving: ${data.fuel_saving_tonnes} t (${data.fuel_saving_pct}%)`;
+    document.getElementById('stats').classList.add('visible');
+    document.getElementById('status').textContent = 'Done.';
+  } catch (err) {
+    document.getElementById('error').textContent = '✗ ' + err.message;
+    document.getElementById('status').textContent = '';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Input changes update markers live
+['s_lat','s_lon','e_lat','e_lon'].forEach(id =>
+  document.getElementById(id).addEventListener('change', updateMarkers)
+);
+</script>
+</body>
+</html>

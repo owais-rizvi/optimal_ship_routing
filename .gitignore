@@ -6,3 +6,5 @@ model_evaluation.png
 ne_land.geojson
 optimised_route.csv
 ship_training_data.csv
+README.md
+__pycache__
