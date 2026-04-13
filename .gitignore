@@ -8,3 +8,5 @@ optimised_route.csv
 ship_training_data.csv
 README.md
 __pycache__
+optimised_route_*
+ne_land_*
