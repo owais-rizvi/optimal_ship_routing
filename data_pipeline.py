@@ -27,21 +27,16 @@ import os
 from tqdm import tqdm
 from datetime import datetime, timedelta
 
-# ─────────────────────────────────────────────
-# CONFIGURATION — edit these
-# ─────────────────────────────────────────────
 
-AIS_FILE    = "aisdk-2025-10-29.csv"   # your AIS file
+AIS_FILE    = "aisdk-2025-10-29.csv"   
 OUTPUT_FILE = "ship_training_data.csv"
 
-# Generic ship defaults
 SHIP_DISPLACEMENT_TONNES = 50_000
 ADMIRALTY_COEFFICIENT    = 600
 SFOC_G_PER_KWH           = 180
 
-# Sampling
-SAMPLE_EVERY_N_ROWS = 10     # use every Nth AIS ping
-MAX_ROWS            = 5000   # total rows after sampling (set None for full run)
+SAMPLE_EVERY_N_ROWS = 10     
+MAX_ROWS            = 5000   
 
 # Open-Meteo endpoints (free, no key)
 MARINE_API  = "https://marine-api.open-meteo.com/v1/marine"
