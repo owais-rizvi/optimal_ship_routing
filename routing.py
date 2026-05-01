@@ -7,13 +7,34 @@ import time
 import json
 import os
 from datetime import datetime, timedelta
-from shapely.geometry import Point, shape, LineString
+from shapely.geometry import Point, shape, LineString, Polygon
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 # ─────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────
+
+EXCLUSION_ZONES = [
+    {
+        "name": "Gulf of Aden (Piracy High Risk)",
+        "coordinates": [
+            [16.0, 43.0],
+            [16.0, 65.0],
+            [-5.0, 65.0],
+            [-5.0, 43.0]
+        ]
+    },
+    {
+        "name": "Black Sea (Conflict Zone)",
+        "coordinates": [
+            [47.0, 27.0],
+            [47.0, 42.0],
+            [40.5, 42.0],
+            [40.5, 27.0]
+        ]
+    }
+]
 
 MODEL_FILE       = "fuel_model.joblib"
 SHIP_SPEED_KNOTS = 12.0
@@ -71,6 +92,10 @@ def load_land_mask():
             polygons.extend(geom.geoms)
         else:
             polygons.append(geom)
+
+    for zone in EXCLUSION_ZONES:
+        poly_coords = [(lon, lat) for lat, lon in zone["coordinates"]]
+        polygons.append(Polygon(poly_coords))
 
     # Two trees:
     # - point_tree / point_polys: full polygons for centre-point containment test

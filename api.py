@@ -1,7 +1,7 @@
 import joblib
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from routing import load_land_mask, astar_route, PORTS, MODEL_FILE
+from routing import load_land_mask, astar_route, PORTS, MODEL_FILE, EXCLUSION_ZONES
 from datetime import datetime
 import numpy as np
 
@@ -32,8 +32,12 @@ def startup_event():
 def get_ports():
     return [{"id": k, "name": v[0], "lat": v[1], "lon": v[2]} for k, v in PORTS.items()]
 
+@app.get("/exclusion_zones")
+def get_exclusion_zones():
+    return EXCLUSION_ZONES
+
 @app.get("/route")
-def get_route(origin: int, dest: int, date: str = None):
+def get_route(origin: int, dest: int, date: str = None, speed: float = 12.0):
     if origin not in PORTS or dest not in PORTS:
         raise HTTPException(status_code=400, detail="Invalid port ID")
     
@@ -54,6 +58,15 @@ def get_route(origin: int, dest: int, date: str = None):
     import os
     import pandas as pd
     from routing import haversine_nm, bearing_deg, predict_fuel_rate
+    
+    calm = {"wave_height_m": 1.0, "wave_period_s": 8.0, "wind_speed_ms": 5.0, "wind_dir_deg": 0}
+    
+    # Baseline calculations
+    baseline_route = [{"lat": float(origin_ll[0]), "lon": float(origin_ll[1])}, {"lat": float(dest_ll[0]), "lon": float(dest_ll[1])}]
+    d_baseline = haversine_nm(origin_ll[0], origin_ll[1], dest_ll[0], dest_ll[1])
+    brg_baseline = bearing_deg(origin_ll[0], origin_ll[1], dest_ll[0], dest_ll[1])
+    rate_baseline = predict_fuel_rate(model, features, speed, brg_baseline, calm)
+    fuel_baseline = rate_baseline * (d_baseline / speed)
     
     target_filename = None
     is_reversed = False
@@ -84,8 +97,6 @@ def get_route(origin: int, dest: int, date: str = None):
                 
         dist = 0.0
         fuel = 0.0
-        calm = {"wave_height_m": 1.0, "wave_period_s": 8.0, "wind_speed_ms": 5.0, "wind_dir_deg": 0}
-        speed = 12.0
         for i in range(len(route_list)-1):
             la, lo = route_list[i]
             nla, nlo = route_list[i+1]
@@ -98,7 +109,10 @@ def get_route(origin: int, dest: int, date: str = None):
         return {
             "route": route_coords,
             "total_fuel_tonnes": round(fuel, 3),
-            "total_distance_nm": round(dist, 1)
+            "total_distance_nm": round(dist, 1),
+            "baseline_route": baseline_route,
+            "baseline_fuel_tonnes": round(fuel_baseline, 3),
+            "baseline_distance_nm": round(d_baseline, 1)
         }
 
     try:
@@ -109,7 +123,8 @@ def get_route(origin: int, dest: int, date: str = None):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
         
-    result = astar_route(origin_ll, dest_ll, model, features, departure, land)
+    # We pass the custom speed to the router by mocking the import or we can just use astar_route with speed
+    result = astar_route(origin_ll, dest_ll, model, features, departure, land, speed=speed)
     if result:
         route_coords = [{"lat": float(p[0]), "lon": float(p[1])} for p in result["route"]]
         
@@ -119,7 +134,10 @@ def get_route(origin: int, dest: int, date: str = None):
         return {
             "route": route_coords,
             "total_fuel_tonnes": result["total_fuel_tonnes"],
-            "total_distance_nm": result["total_distance_nm"]
+            "total_distance_nm": result["total_distance_nm"],
+            "baseline_route": baseline_route,
+            "baseline_fuel_tonnes": round(fuel_baseline, 3),
+            "baseline_distance_nm": round(d_baseline, 1)
         }
     else:
         raise HTTPException(status_code=404, detail="No route found")

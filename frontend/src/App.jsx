@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, Polygon } from 'react-leaflet';
 import L from 'leaflet';
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -25,6 +25,8 @@ function App() {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [speed, setSpeed] = useState(12);
+  const [exclusionZones, setExclusionZones] = useState([]);
   
   const [loading, setLoading] = useState(false);
   const [routeData, setRouteData] = useState(null);
@@ -40,6 +42,10 @@ function App() {
         console.error("Failed to load ports", err);
         setError("Failed to connect to the backend API.");
       });
+      
+    axios.get(`${API_BASE}/exclusion_zones`)
+      .then(res => setExclusionZones(res.data))
+      .catch(err => console.error("Failed to load exclusion zones", err));
   }, []);
 
   const handleRoute = async (e) => {
@@ -62,7 +68,8 @@ function App() {
         params: {
           origin,
           dest: destination,
-          date
+          date,
+          speed
         }
       });
       setRouteData(res.data);
@@ -80,6 +87,7 @@ function App() {
 
   // Convert API route format to Leaflet latlng array
   const routePositions = routeData ? routeData.route.map(p => [p.lat, p.lon]) : [];
+  const baselinePositions = routeData?.baseline_route ? routeData.baseline_route.map(p => [p.lat, p.lon]) : [];
   
   // Calculate bounds to fit the route
   const bounds = routePositions.length > 0 ? L.latLngBounds(routePositions) : null;
@@ -122,6 +130,18 @@ function App() {
             />
           </div>
 
+          <div className="form-group">
+            <label>Vessel Speed: {speed} knots</label>
+            <input 
+              type="range" 
+              min="8" 
+              max="24" 
+              step="0.5"
+              value={speed} 
+              onChange={(e) => setSpeed(parseFloat(e.target.value))} 
+            />
+          </div>
+
           <button type="submit" disabled={loading || !ports.length}>
             {loading ? <div className="loader"></div> : "Calculate Optimal Route"}
           </button>
@@ -137,12 +157,21 @@ function App() {
           <div className="results-panel">
             <h3>Voyage Summary</h3>
             <div className="stat-row">
-              <span className="label">Total Distance</span>
-              <span className="value">{routeData.total_distance_nm.toLocaleString()} nm</span>
+              <span className="label">Optimized Fuel</span>
+              <span className="value">{routeData.total_fuel_tonnes.toLocaleString()} t</span>
             </div>
             <div className="stat-row">
-              <span className="label">Estimated Fuel</span>
-              <span className="value">{routeData.total_fuel_tonnes.toLocaleString()} tonnes</span>
+              <span className="label">Baseline Fuel (Straight Line)</span>
+              <span className="value">{routeData.baseline_fuel_tonnes.toLocaleString()} t</span>
+            </div>
+            <div className="stat-row" style={{ color: 'var(--success)', fontWeight: 'bold' }}>
+              <span className="label">Fuel Saved</span>
+              <span className="value">{(routeData.baseline_fuel_tonnes - routeData.total_fuel_tonnes).toFixed(1)} t</span>
+            </div>
+            <hr style={{ borderColor: 'rgba(255,255,255,0.1)', margin: '1rem 0' }} />
+            <div className="stat-row">
+              <span className="label">Optimized Distance</span>
+              <span className="value">{routeData.total_distance_nm.toLocaleString()} nm</span>
             </div>
             <div className="stat-row">
               <span className="label">Waypoints</span>
@@ -175,6 +204,29 @@ function App() {
             <Marker position={getPortCoordinates(destination)}>
               <Popup>Destination: {ports.find(p => p.id.toString() === destination.toString())?.name}</Popup>
             </Marker>
+          )}
+
+          {exclusionZones.map((zone, idx) => (
+            <Polygon 
+              key={`zone-${idx}`} 
+              positions={zone.coordinates} 
+              pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.2, weight: 1 }}
+            >
+              <Popup><strong>Exclusion Zone</strong><br/>{zone.name}</Popup>
+            </Polygon>
+          ))}
+
+          {baselinePositions.length > 0 && (
+            <Polyline 
+              positions={baselinePositions} 
+              pathOptions={{ 
+                color: '#ef4444', 
+                weight: 2, 
+                opacity: 0.6,
+                dashArray: '5, 10',
+                lineCap: 'round'
+              }} 
+            />
           )}
 
           {routePositions.length > 0 && (
